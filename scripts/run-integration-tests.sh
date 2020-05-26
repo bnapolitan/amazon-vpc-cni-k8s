@@ -141,39 +141,57 @@ ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | gr
 echo "*******************************************************************************"
 echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"
 echo ""
+START=$SECONDS
 pushd ./test/integration
 GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
     --assets=./assets
 TEST_PASS=$?
 popd
+DEFAULT_INTEGRATION_DURATION=$((SECONDS - START))
+echo "TIMELINE: Default CNI integration tests took $DURATION seconds."
 
 echo "*******************************************************************************"
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
+START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
 echo "Sleeping for 110s"
 echo "TODO: Poll and wait for updates to complete instead!"
 sleep 110
+CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
+echo "TIMELINE: Updating CNI image took $DURATION seconds."
 
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"
 echo ""
+START=$SECONDS
 pushd ./test/integration
 GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \
     --assets=./assets
 TEST_PASS=$?
 popd
+CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
+echo "TIMELINE: Current image integration tests took $DURATION seconds."
 
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
+  START=$SECONDS
   wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
   /tmp/e2e.test --ginkgo.focus="Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)"
+  
+  CONFORMANCE_DURATION=$((SECONDS - START))
+  echo "TIMELINE: Conformance tests took $DURATION seconds."
 fi
 
 if [[ "$DEPROVISION" == true ]]; then
+    START=$SECONDS
+
     down-test-cluster
+
+    DOWN_DURATION=$((SECONDS - START))
+    echo "TIMELINE: Down processes took $DURATION seconds."
 fi
 
 if [[ $TEST_PASS -ne 0 ]]; then

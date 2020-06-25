@@ -186,6 +186,17 @@ echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"
 echo ""
+
+ls $TESTER_PATH
+START=$SECONDS
+go get github.com/aws/aws-k8s-tester/e2e/tester/cmd/k8s-e2e-tester@master
+TESTCONFIG=./kops-test-config.yaml ${GOPATH}/bin/k8s-e2e-tester
+KOPS_TEST_DURATION=$((SECONDS - START))
+echo "TIMELINE: Current image integration tests took $KOPS_TEST_DURATION seconds."
+
+#TESTCONFIG=./kops-test-config.yaml ${TESTER_PATH}/e2e/tester/cmd/k8s-e2e-tester@master
+
+
 START=$SECONDS
 pushd ./test/integration
 GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \

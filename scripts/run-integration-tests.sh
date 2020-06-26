@@ -19,6 +19,7 @@ ARCH=$(go env GOARCH)
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
 : "${RUN_CONFORMANCE:=false}"
+: "${RUN_KOPS_TEST:=false}"
 
 __cluster_created=0
 __cluster_deprovisioned=0
@@ -138,13 +139,23 @@ mkdir -p "$REPORT_DIR"
 mkdir -p "$TEST_CLUSTER_DIR"
 mkdir -p "$TEST_CONFIG_DIR"
 
-if [[ "$PROVISION" == true ]]; then
-    START=$SECONDS
+START=$SECONDS
+if [[ "$PROVISION" == true && "$RUN_KOPS_TEST" == false ]]; then
     up-test-cluster
-    UP_CLUSTER_DURATION=$((SECONDS - START))
-    echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
     __cluster_created=1
+else
+    aws s3api create-bucket --bucket kops-cni-test --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
+    export NAME=kops-cni-test.k8s.local
+    export KOPS_STATE_STORE=s3://kops-cni-test
+    kops create cluster \
+    --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
+    --networking amazon-vpc-routed-eni \
+    --node-count 2 \
+    ${NAME}
+    kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.6.3/config/v1.6/cni-metrics-helper.yaml
 fi
+UP_CLUSTER_DURATION=$((SECONDS - START))
+echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 
 echo "Using $BASE_CONFIG_PATH as a template"
 cp "$BASE_CONFIG_PATH" "$TEST_CONFIG_PATH"
@@ -187,12 +198,12 @@ echo "**************************************************************************
 echo "Running integration tests on current image:"
 echo ""
 
-ls
-START=$SECONDS
-go get github.com/aws/aws-k8s-tester/e2e/tester/cmd/k8s-e2e-tester@master
-TESTCONFIG=./kops-test-config.yaml ${GOPATH}/bin/k8s-e2e-tester
-KOPS_TEST_DURATION=$((SECONDS - START))
-echo "TIMELINE: Current image integration tests took $KOPS_TEST_DURATION seconds."
+# ls
+# START=$SECONDS
+# go get github.com/aws/aws-k8s-tester/e2e/tester/cmd/k8s-e2e-tester@master
+# TESTCONFIG=./kops-test-config.yaml ${GOPATH}/bin/k8s-e2e-tester
+# KOPS_TEST_DURATION=$((SECONDS - START))
+# echo "TIMELINE: Current image integration tests took $KOPS_TEST_DURATION seconds."
 
 #TESTCONFIG=./kops-test-config.yaml ${TESTER_PATH}/e2e/tester/cmd/k8s-e2e-tester@master
 
@@ -225,7 +236,12 @@ fi
 if [[ "$DEPROVISION" == true ]]; then
     START=$SECONDS
 
-    down-test-cluster
+    if [[ "$RUN_KOPS_TEST" == false ]]; then
+        down-test-cluster
+    else
+        kops delete cluster --name $NAME --yes
+        aws s3 rb s3://kops-cni-test --region us-west-2
+    fi
 
     DOWN_DURATION=$((SECONDS - START))
     echo "TIMELINE: Down processes took $DOWN_DURATION seconds."

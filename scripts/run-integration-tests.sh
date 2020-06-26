@@ -187,7 +187,7 @@ echo "**************************************************************************
 echo "Running integration tests on current image:"
 echo ""
 
-ls $TESTER_PATH
+ls
 START=$SECONDS
 go get github.com/aws/aws-k8s-tester/e2e/tester/cmd/k8s-e2e-tester@master
 TESTCONFIG=./kops-test-config.yaml ${GOPATH}/bin/k8s-e2e-tester

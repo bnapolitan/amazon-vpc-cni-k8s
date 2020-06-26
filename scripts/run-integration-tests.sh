@@ -190,7 +190,9 @@ echo ""
 ls $TESTER_PATH
 START=$SECONDS
 go get github.com/aws/aws-k8s-tester/e2e/tester/cmd/k8s-e2e-tester@master
-TESTCONFIG=./kops-test-config.yaml ${GOPATH}/bin/k8s-e2e-tester
+TESTCONFIG=./kops-test-config.yaml 
+./go/bin/k8s-e2e-tester
+#${GOPATH}/bin/k8s-e2e-tester
 KOPS_TEST_DURATION=$((SECONDS - START))
 echo "TIMELINE: Current image integration tests took $KOPS_TEST_DURATION seconds."
 

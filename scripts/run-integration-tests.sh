@@ -144,7 +144,7 @@ if [[ "$PROVISION" == true && "$RUN_KOPS_TEST" == false ]]; then
     up-test-cluster
     __cluster_created=1
 else
-    aws s3api create-bucket --bucket kops-cni-test --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
+    aws s3api create-bucket --bucket kops-cni-test-temp --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
     export NAME=kops-cni-test.k8s.local
     export KOPS_STATE_STORE=s3://kops-cni-test
     kops create cluster \

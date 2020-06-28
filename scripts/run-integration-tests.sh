@@ -156,6 +156,13 @@ else
     --networking amazon-vpc-routed-eni \
     --node-count 2 \
     ${NAME}
+    kops update cluster --name kops-cni-test.k8s.local --yes
+    sleep 40
+    while [[ ! $(kops validate cluster | grep "is ready") ]]
+    do
+        sleep 5
+        echo "Waiting for cluster validation"
+    done
     kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.6.3/config/v1.6/cni-metrics-helper.yaml
     __cluster_created=1
 fi

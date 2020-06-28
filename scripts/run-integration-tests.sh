@@ -150,6 +150,7 @@ else
     sudo mv kops-linux-amd64 /usr/local/bin/kops
     export NAME=kops-cni-test.k8s.local
     export KOPS_STATE_STORE=s3://kops-cni-test-temp
+    kops create secret --name kops-cni-test.k8s.local sshpublickey admin -i ~/.ssh/id_rsa.pub
     kops create cluster \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
     --networking amazon-vpc-routed-eni \

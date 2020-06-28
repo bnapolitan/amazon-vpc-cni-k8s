@@ -150,12 +150,12 @@ else
     sudo mv kops-linux-amd64 /usr/local/bin/kops
     CLUSTER_NAME=kops-cni-test-cluster.k8s.local
     export KOPS_STATE_STORE=s3://kops-cni-test-temp
+    kops create secret --name ${CLUSTER_NAME} sshpublickey admin -i ~/.ssh/id_rsa.pub
     kops create cluster \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
     --networking amazon-vpc-routed-eni \
     --node-count 2 \
     ${CLUSTER_NAME}
-    kops create secret --name ${CLUSTER_NAME} sshpublickey admin -i ~/.ssh/id_rsa.pub
     kops update cluster --name ${CLUSTER_NAME} --yes
     sleep 40
     while [[ ! $(kops validate cluster | grep "is ready") ]]
@@ -252,7 +252,8 @@ if [[ "$DEPROVISION" == true ]]; then
         down-test-cluster
     else
         kops delete cluster --name ${CLUSTER_NAME} --yes
-        aws s3 rb s3://kops-cni-test --region us-west-2
+        aws s3 rm ${KOPS_STATE_STORE} --recursive
+        aws s3 rb ${KOPS_STATE_STORE} --region us-west-2
     fi
 
     DOWN_DURATION=$((SECONDS - START))

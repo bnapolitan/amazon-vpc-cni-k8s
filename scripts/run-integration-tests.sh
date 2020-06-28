@@ -150,11 +150,21 @@ else
     sudo mv kops-linux-amd64 /usr/local/bin/kops
     CLUSTER_NAME=kops-cni-test-cluster.k8s.local
     export KOPS_STATE_STORE=s3://kops-cni-test-temp
-    kops create secret --name ${CLUSTER_NAME} sshpublickey admin -i ~/.ssh/id_rsa.pub
+
+    SSH_KEYS=~/.ssh/devopsinuse
+    if [ ! -f "$SSH_KEYS" ]
+    then
+        echo -e "\nCreating SSH keys ..."
+        ssh-keygen -t rsa -N '' -f ~/.ssh/devopsinuse
+    else
+        echo -e "\nSSH keys are already in place!"
+    fi
+
     kops create cluster \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
     --networking amazon-vpc-routed-eni \
     --node-count 2 \
+    --ssh-public-key=~/.ssh/devopsinuse.pub \
     ${CLUSTER_NAME}
     kops update cluster --name ${CLUSTER_NAME} --yes
     sleep 40

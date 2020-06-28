@@ -148,7 +148,7 @@ else
     curl -LO https://github.com/kubernetes/kops/releases/download/$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)/kops-linux-amd64
     chmod +x kops-linux-amd64
     sudo mv kops-linux-amd64 /usr/local/bin/kops
-    export NAME=kops-cni-test
+    export NAME=kops-cni-test.k8s.local
     export KOPS_STATE_STORE=s3://kops-cni-test-temp3
     kops create cluster \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \

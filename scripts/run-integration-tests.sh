@@ -148,15 +148,15 @@ else
     curl -LO https://github.com/kubernetes/kops/releases/download/$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)/kops-linux-amd64
     chmod +x kops-linux-amd64
     sudo mv kops-linux-amd64 /usr/local/bin/kops
-    export NAME=kops-cni-test.k8s.local
+    CLUSTER_NAME=kops-cni-test-cluster.k8s.local
     export KOPS_STATE_STORE=s3://kops-cni-test-temp
-    kops create secret --name kops-cni-test.k8s.local sshpublickey admin -i ~/.ssh/id_rsa.pub
     kops create cluster \
     --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
     --networking amazon-vpc-routed-eni \
     --node-count 2 \
-    ${NAME}
-    kops update cluster --name kops-cni-test.k8s.local --yes
+    ${CLUSTER_NAME}
+    kops create secret --name ${CLUSTER_NAME} sshpublickey admin -i ~/.ssh/id_rsa.pub
+    kops update cluster --name ${CLUSTER_NAME} --yes
     sleep 40
     while [[ ! $(kops validate cluster | grep "is ready") ]]
     do
@@ -251,7 +251,7 @@ if [[ "$DEPROVISION" == true ]]; then
     if [[ "$RUN_KOPS_TEST" == false ]]; then
         down-test-cluster
     else
-        kops delete cluster --name $NAME --yes
+        kops delete cluster --name ${CLUSTER_NAME} --yes
         aws s3 rb s3://kops-cni-test --region us-west-2
     fi
 

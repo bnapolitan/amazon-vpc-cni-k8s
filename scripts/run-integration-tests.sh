@@ -171,7 +171,7 @@ else
     --node-count 2 \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
     --kubernetes-version ${K8S_VERSION} \
-    # ${CLUSTER_NAME}
+    ${CLUSTER_NAME}
     # kops create cluster \
     # --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
     # --networking amazon-vpc-routed-eni \

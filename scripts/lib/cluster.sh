@@ -40,3 +40,9 @@ function up-test-cluster() {
         echo "ok."
     fi
 }
+
+function down-kops-cluster {
+    kops delete cluster --name ${CLUSTER_NAME} --yes
+    aws s3 rm ${KOPS_STATE_STORE} --recursive
+    aws s3 rb ${KOPS_STATE_STORE} --region us-west-2
+}

@@ -27,11 +27,14 @@ __cluster_deprovisioned=0
 on_error() {
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the cluster
-    if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
+    if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true && $RUN_KOPS_TEST == false ]]; then
         # prevent double-deprovisioning with ctrl-c during deprovisioning...
         __cluster_deprovisioned=1
         echo "Cluster was provisioned already. Deprovisioning it..."
         down-test-cluster
+    fi
+    if [[ $RUN_KOPS_TEST == true ]]; then
+        down-kops-cluster
     fi
     exit 1
 }
@@ -166,6 +169,7 @@ else
     --networking amazon-vpc-routed-eni \
     --node-count 2 \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
+    --kubernetes-version $K8S_VERSION
     ${CLUSTER_NAME}
     kops update cluster --name ${CLUSTER_NAME} --yes
     sleep 40
@@ -192,6 +196,17 @@ sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PA
 export KUBECONFIG=$KUBECONFIG_PATH
 if [[ $RUN_KOPS_TEST != true ]]; then
     ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
+else
+  go install github.com/onsi/ginkgo/ginkgo
+  wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
+  ginkgo -p --focus="Conformance"  --failFast --flakeAttempts 2 \
+   --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" /tmp/e2e.test -- --kubeconfig=$KUBECONFIG
+
+  /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
+    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
+  echo "Kops conformance tests ran successfully!"
+  down-kops-cluster
+  exit 0
 fi
 
 echo "*******************************************************************************"

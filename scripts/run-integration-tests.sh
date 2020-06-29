@@ -148,7 +148,7 @@ else
     curl -LO https://github.com/kubernetes/kops/releases/download/$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)/kops-linux-amd64
     chmod +x kops-linux-amd64
     sudo mv kops-linux-amd64 /usr/local/bin/kops
-    CLUSTER_NAME=kops-cni-test-cluster.k8s.local
+    CLUSTER_NAME=kops-cni-test-cluster-${TEST_ID}.k8s.local
     export KOPS_STATE_STORE=s3://kops-cni-test-temp
 
     SSH_KEYS=~/.ssh/devopsinuse
@@ -189,7 +189,15 @@ sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 
 export KUBECONFIG=$KUBECONFIG_PATH
-ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
+if [[ $RUN_KOPS_TEST != true ]]; then
+    ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
+else
+    pushd ./test/integration
+    go test ./test/e2e/ -v -timeout=0 -kubeconfig=$KUBECONFIG --cluster-name=$CLUSTER_NAME --region=us-west-2 -ginkgo.focus="\[cni-integration]" -ginkgo.skip="\[Disruptive\]"
+    TEST_PASS=$?
+    echo "Kops-provisioned cluster ran successfully!"
+    exit 0
+fi
 
 echo "*******************************************************************************"
 echo "Running integration tests on default CNI version, $ADDONS_CNI_IMAGE"

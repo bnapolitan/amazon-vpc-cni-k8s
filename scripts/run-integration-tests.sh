@@ -170,7 +170,7 @@ else
     --networking amazon-vpc-routed-eni \
     --node-count 2 \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
-    --kubernetes-version ${K8S_VERSION}
+    --kubernetes-version ${K8S_VERSION} \
     ${CLUSTER_NAME}
     kops update cluster --name ${CLUSTER_NAME} --yes
     sleep 40

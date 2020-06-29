@@ -171,9 +171,15 @@ else
     --node-count 2 \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
     --kubernetes-version ${K8S_VERSION} \
-    ${CLUSTER_NAME}
+    # ${CLUSTER_NAME}
+    # kops create cluster \
+    # --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
+    # --networking amazon-vpc-routed-eni \
+    # --node-count 2 \
+    # --kubernetes-version ${K8S_VERSION} \
+    # ${CLUSTER_NAME}
     kops update cluster --name ${CLUSTER_NAME} --yes
-    sleep 40
+    sleep 100
     while [[ ! $(kops validate cluster | grep "is ready") ]]
     do
         sleep 5
@@ -198,16 +204,17 @@ export KUBECONFIG=$KUBECONFIG_PATH
 if [[ $RUN_KOPS_TEST != true ]]; then
     ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 else
-  go install github.com/onsi/ginkgo/ginkgo
-  wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
-  ginkgo -p --focus="Conformance"  --failFast --flakeAttempts 2 \
-   --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" /tmp/e2e.test -- --kubeconfig=$KUBECONFIG
+    $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
+    sleep 110
 
-  /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
+    go install github.com/onsi/ginkgo/ginkgo
+    wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
+
+    /tmp/e2e.test --ginkgo.focus="Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
-  echo "Kops conformance tests ran successfully!"
-  down-kops-cluster
-  exit 0
+    echo "Kops conformance tests ran successfully!"
+    down-kops-cluster
+    exit 0
 fi
 
 echo "*******************************************************************************"
@@ -280,9 +287,7 @@ if [[ "$DEPROVISION" == true ]]; then
     if [[ "$RUN_KOPS_TEST" == false ]]; then
         down-test-cluster
     else
-        kops delete cluster --name ${CLUSTER_NAME} --yes
-        aws s3 rm ${KOPS_STATE_STORE} --recursive
-        aws s3 rb ${KOPS_STATE_STORE} --region us-west-2
+        down-kops-cluster
     fi
 
     DOWN_DURATION=$((SECONDS - START))

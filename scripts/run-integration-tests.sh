@@ -34,6 +34,7 @@ on_error() {
         down-test-cluster
     fi
     if [[ $RUN_KOPS_TEST == true ]]; then
+        echo "Cluster was provisioned already. Deprovisioning it..."
         down-kops-cluster
     fi
     exit 1
@@ -169,7 +170,7 @@ else
     --networking amazon-vpc-routed-eni \
     --node-count 2 \
     --ssh-public-key=~/.ssh/devopsinuse.pub \
-    --kubernetes-version $K8S_VERSION
+    --kubernetes-version ${K8S_VERSION}
     ${CLUSTER_NAME}
     kops update cluster --name ${CLUSTER_NAME} --yes
     sleep 40

@@ -204,7 +204,7 @@ export KUBECONFIG=$KUBECONFIG_PATH
 if [[ $RUN_KOPS_TEST != true ]]; then
     ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 else
-    $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
+    kubectl apply -f "$TEST_CONFIG_PATH"
     sleep 110
 
     go install github.com/onsi/ginkgo/ginkgo
@@ -233,7 +233,7 @@ echo "**************************************************************************
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
-$KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
+kubectl apply -f "$TEST_CONFIG_PATH"
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
 echo "TODO: Poll and wait for updates to complete instead!"

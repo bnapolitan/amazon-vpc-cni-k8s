@@ -49,6 +49,7 @@ CLUSTER_NAME=cni-test-$CLUSTER_ID
 TEST_CLUSTER_DIR=/tmp/cni-test/cluster-$CLUSTER_NAME
 : "${CLUSTER_CONFIG:=${TEST_CLUSTER_DIR}/${CLUSTER_NAME}.yaml}"
 : "${KUBECONFIG_PATH:=${TEST_CLUSTER_DIR}/kubeconfig}"
+: "${ADDONS_CNI_IMAGE:=""}"
 
 # shared binaries
 : "${TESTER_DIR:=/tmp/aws-k8s-tester}"
@@ -191,12 +192,6 @@ sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PA
 export KUBECONFIG=$KUBECONFIG_PATH
 if [[ $RUN_KOPS_TEST != true ]]; then
     ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
-else
-    pushd ./test/integration
-    go test ./test/e2e/ -v -timeout=0 -kubeconfig=$KUBECONFIG --cluster-name=$CLUSTER_NAME --region=us-west-2 -ginkgo.focus="\[cni-integration]" -ginkgo.skip="\[Disruptive\]"
-    TEST_PASS=$?
-    echo "Kops-provisioned cluster ran successfully!"
-    exit 0
 fi
 
 echo "*******************************************************************************"

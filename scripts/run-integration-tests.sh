@@ -200,10 +200,11 @@ sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PA
 sed -i'.bak' "s,602401143452.dkr.ecr.us-west-2.amazonaws.com/amazon-k8s-cni-init,$INIT_IMAGE_NAME," "$TEST_CONFIG_PATH"
 sed -i'.bak' "s,:$MANIFEST_IMAGE_VERSION,:$TEST_IMAGE_VERSION," "$TEST_CONFIG_PATH"
 
-export KUBECONFIG=$KUBECONFIG_PATH
 if [[ $RUN_KOPS_TEST != true ]]; then
+    export KUBECONFIG=$KUBECONFIG_PATH
     ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 else
+    export KUBECONFIG=~/.kube/config
     kubectl apply -f "$TEST_CONFIG_PATH"
     sleep 110
 

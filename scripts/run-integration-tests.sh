@@ -204,6 +204,8 @@ if [[ $RUN_KOPS_TEST != true ]]; then
     export KUBECONFIG=$KUBECONFIG_PATH
     ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 else
+    START=$SECONDS
+
     export KUBECONFIG=~/.kube/config
     kubectl apply -f "$TEST_CONFIG_PATH"
     sleep 110
@@ -211,10 +213,20 @@ else
     go install github.com/onsi/ginkgo/ginkgo
     wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
 
-    /tmp/e2e.test --ginkgo.focus="Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
+    ginkgo -p --focus="Conformance"  --failFast --flakeAttempts 2 \
+    --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" /tmp/e2e.test -- --kubeconfig=$KUBECONFIG
+
+    /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
     --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
     echo "Kops conformance tests ran successfully!"
+
+    KOPS_TEST_DURATION=$((SECONDS - START))
+    echo "TIMELINE: KOPS tests took $KOPS_TEST_DURATION seconds."
+
+    START=$SECONDS
     down-kops-cluster
+    DOWN_KOPS_DURATION=$((SECONDS - START))
+    echo "TIMELINE: Down KOPS cluster took $DOWN_KOPS_DURATION seconds."
     exit 0
 fi
 
@@ -246,15 +258,6 @@ echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"
 echo ""
-
-# ls
-# START=$SECONDS
-# go get github.com/aws/aws-k8s-tester/e2e/tester/cmd/k8s-e2e-tester@master
-# TESTCONFIG=./kops-test-config.yaml ${GOPATH}/bin/k8s-e2e-tester
-# KOPS_TEST_DURATION=$((SECONDS - START))
-# echo "TIMELINE: Current image integration tests took $KOPS_TEST_DURATION seconds."
-
-#TESTCONFIG=./kops-test-config.yaml ${TESTER_PATH}/e2e/tester/cmd/k8s-e2e-tester@master
 
 
 START=$SECONDS

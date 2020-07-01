@@ -26,8 +26,10 @@ import (
 )
 
 const (
-	// minENILifeTime is the shortest time before we consider deleting a newly created ENI
-	minENILifeTime = 1 * time.Minute
+	minLifeTime = 1 * time.Minute
+	// addressENICoolingPeriod is used to ensure ENI will NOT get freed back to EC2 control plane if one of
+	// its secondary IP addresses is used for a Pod within last addressENICoolingPeriod
+	addressENICoolingPeriod = 1 * time.Minute
 
 	// addressCoolingPeriod is used to ensure an IP not get assigned to a Pod if this IP is used by a different Pod
 	// in addressCoolingPeriod
@@ -61,6 +63,9 @@ const BackfillNetworkIface = "unknown"
 
 // ErrUnknownPod is an error when there is no pod in data store matching pod name, namespace, sandbox id
 var ErrUnknownPod = errors.New("datastore: unknown pod")
+
+// ErrUnknownPodIP is an error where pod's IP address is not found in data store
+var ErrUnknownPodIP = errors.New("datastore: pod using unknown IP address")
 
 var (
 	enis = prometheus.NewGauge(
@@ -569,7 +574,7 @@ func (ds *DataStore) getDeletableENI(warmIPTarget int, minimumIPTarget int) *ENI
 
 // IsTooYoung returns true if the ENI hasn't been around long enough to be deleted.
 func (e *ENI) isTooYoung() bool {
-	return time.Since(e.createTime) < minENILifeTime
+	return time.Since(e.createTime) < minLifeTime
 }
 
 // HasIPInCooling returns true if an IP address was unassigned recently.

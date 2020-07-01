@@ -13,7 +13,6 @@
 package eniconfig
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -22,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
+	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/stretchr/testify/assert"
 
 	corev1 "k8s.io/api/core/v1"
@@ -39,10 +38,11 @@ func updateENIConfig(hdlr sdk.Handler, name string, eniConfig v1alpha1.ENIConfig
 		Deleted: toDelete,
 	}
 
-	_ = hdlr.Handle(context.TODO(), event)
+	hdlr.Handle(nil, event)
 }
 
 func updateNodeAnnotation(hdlr sdk.Handler, nodeName string, configName string, toDelete bool) {
+
 	node := corev1.Node{
 		TypeMeta: metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{
@@ -66,7 +66,7 @@ func updateNodeAnnotation(hdlr sdk.Handler, nodeName string, configName string, 
 		eniAnnotations[eniConfigAnnotationDef] = configName
 	}
 	accessor.SetAnnotations(eniAnnotations)
-	_ = hdlr.Handle(context.TODO(), event)
+	hdlr.Handle(nil, event)
 }
 
 func updateNodeLabel(hdlr sdk.Handler, nodeName string, configName string, toDelete bool) {
@@ -94,10 +94,11 @@ func updateNodeLabel(hdlr sdk.Handler, nodeName string, configName string, toDel
 		eniLabels[eniConfigLabelDef] = configName
 	}
 	accessor.SetLabels(eniLabels)
-	_ = hdlr.Handle(context.TODO(), event)
+	hdlr.Handle(nil, event)
 }
 
 func TestENIConfig(t *testing.T) {
+
 	testENIConfigController := NewENIConfigController()
 
 	testHandler := NewHandler(testENIConfigController)
@@ -135,7 +136,7 @@ func TestENIConfig(t *testing.T) {
 func TestNodeENIConfig(t *testing.T) {
 	myNodeName := "testMyNodeWithAnnotation"
 	myENIConfig := "testMyENIConfig"
-	_ = os.Setenv("MY_NODE_NAME", myNodeName)
+	os.Setenv("MY_NODE_NAME", myNodeName)
 	testENIConfigController := NewENIConfigController()
 
 	testHandler := NewHandler(testENIConfigController)
@@ -176,7 +177,7 @@ func TestNodeENIConfig(t *testing.T) {
 func TestNodeENIConfigLabel(t *testing.T) {
 	myNodeName := "testMyNodeWithLabel"
 	myENIConfig := "testMyENIConfig"
-	_ = os.Setenv("MY_NODE_NAME", myNodeName)
+	os.Setenv("MY_NODE_NAME", myNodeName)
 	testENIConfigController := NewENIConfigController()
 
 	testHandler := NewHandler(testENIConfigController)
@@ -215,25 +216,25 @@ func TestNodeENIConfigLabel(t *testing.T) {
 }
 
 func TestGetEniConfigAnnotationDefDefault(t *testing.T) {
-	_ = os.Unsetenv(envEniConfigAnnotationDef)
+	os.Unsetenv(envEniConfigAnnotationDef)
 	eniConfigAnnotationDef := getEniConfigAnnotationDef()
 	assert.Equal(t, eniConfigAnnotationDef, defaultEniConfigAnnotationDef)
 }
 
 func TestGetEniConfigAnnotationlDefCustom(t *testing.T) {
-	_ = os.Setenv(envEniConfigAnnotationDef, "k8s.amazonaws.com/eniConfigCustom")
+	os.Setenv(envEniConfigAnnotationDef, "k8s.amazonaws.com/eniConfigCustom")
 	eniConfigAnnotationDef := getEniConfigAnnotationDef()
 	assert.Equal(t, eniConfigAnnotationDef, "k8s.amazonaws.com/eniConfigCustom")
 }
 
 func TestGetEniConfigLabelDefDefault(t *testing.T) {
-	_ = os.Unsetenv(envEniConfigLabelDef)
+	os.Unsetenv(envEniConfigLabelDef)
 	eniConfigLabelDef := getEniConfigLabelDef()
 	assert.Equal(t, eniConfigLabelDef, defaultEniConfigLabelDef)
 }
 
 func TestGetEniConfigLabelDefCustom(t *testing.T) {
-	_ = os.Setenv(envEniConfigLabelDef, "k8s.amazonaws.com/eniConfigCustom")
+	os.Setenv(envEniConfigLabelDef, "k8s.amazonaws.com/eniConfigCustom")
 	eniConfigLabelDef := getEniConfigLabelDef()
 	assert.Equal(t, eniConfigLabelDef, "k8s.amazonaws.com/eniConfigCustom")
 }

@@ -2,7 +2,7 @@
 
 set -euxo pipefail
 
-PLUGIN_BINS="loopback portmap bandwidth aws-cni-support.sh"
+PLUGIN_BINS="loopback portmap aws-cni-support.sh"
 
 for b in $PLUGIN_BINS; do
     if [ ! -f "$b" ]; then
@@ -17,8 +17,11 @@ HOST_CNI_BIN_PATH=${HOST_CNI_BIN_PATH:-"/host/opt/cni/bin"}
 echo "Copying CNI plugin binaries ... "
 
 for b in $PLUGIN_BINS; do
-    # Install the binary
-    install "$b" "$HOST_CNI_BIN_PATH"
+    # If the file exist, delete it first
+    if [[ -f "$HOST_CNI_BIN_PATH/$b" ]]; then
+        rm "$HOST_CNI_BIN_PATH/$b"
+    fi
+    cp "$b" "$HOST_CNI_BIN_PATH"
 done
 
 # Configure rp_filter

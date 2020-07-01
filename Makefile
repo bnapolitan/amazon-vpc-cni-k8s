@@ -74,9 +74,9 @@ ALLPKGS = $(shell go list ./...)
 # BINS is the set of built command executables.
 BINS = aws-k8s-agent aws-cni grpc-health-probe cni-metrics-helper
 # Plugin binaries
-# Not copied: bridge dhcp firewall flannel host-device host-local ipvlan macvlan ptp sbr static tuning vlan
+# Not copied: bandwidth bridge dhcp firewall flannel host-device host-local ipvlan macvlan ptp sbr static tuning vlan
 # For gnu tar, the full path in the tar file is required
-PLUGIN_BINS = ./loopback ./portmap ./bandwidth
+PLUGIN_BINS = ./loopback ./portmap
 
 # DOCKER_ARGS is extra arguments passed during container image build.
 DOCKER_ARGS =
@@ -136,7 +136,6 @@ unit-test:
 	go test -v -coverprofile=coverage.txt -covermode=atomic $(ALLPKGS)
 
 # Run unit tests with race detection (can only be run natively)
-unit-test-race: export AWS_VPC_K8S_CNI_LOG_FILE=stdout
 unit-test-race: CGO_ENABLED=1
 unit-test-race: GOARCH=
 unit-test-race:
@@ -171,7 +170,7 @@ docker-metrics:
 		-f scripts/dockerfiles/Dockerfile.metrics \
 		-t "$(METRICS_IMAGE_NAME)" \
 		.
-	@echo "Built Docker image \"$(METRICS_IMAGE_NAME)\""
+	@echo "Built Docker image \"amazon/cni-metrics-helper:$(VERSION)\""
 
 # Run metrics helper unit test suite (must be run natively).
 metrics-unit-test: CGO_ENABLED=1

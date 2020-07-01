@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
@@ -163,7 +165,7 @@ func TestSetupHostNetworkNodePortDisabled(t *testing.T) {
 	mockNetLink.EXPECT().NewRule().Return(&mainENIRule)
 	mockNetLink.EXPECT().RuleDel(&mainENIRule)
 
-	var vpcCIDRs []string
+	var vpcCIDRs []*string
 	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, loopback, &testENINetIP)
 	assert.NoError(t, err)
 }
@@ -288,7 +290,7 @@ func TestSetupHostNetworkNodePortEnabled(t *testing.T) {
 
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
-	var vpcCIDRs []string
+	var vpcCIDRs []*string
 
 	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, loopback, &testENINetIP)
 	assert.NoError(t, err)
@@ -358,7 +360,8 @@ func TestSetupHostNetworkWithExcludeSNATCIDRs(t *testing.T) {
 
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
-	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
+	var vpcCIDRs []*string
+	vpcCIDRs = []*string{aws.String("10.10.0.0/16"), aws.String("10.11.0.0/16")}
 	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, loopback, &testENINetIP)
 	assert.NoError(t, err)
 	assert.Equal(t,
@@ -402,6 +405,7 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
+	vpcCIDRs := []*string{aws.String("10.10.0.0/16"), aws.String("10.11.0.0/16")}
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-0", "!", "-d", "10.10.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAN", "-j", "AWS-SNAT-CHAIN-1") //AWS SNAT CHAN proves backwards compatibility
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-1", "!", "-d", "10.11.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-2")
 	_ = mockIptables.Append("nat", "AWS-SNAT-CHAIN-2", "!", "-d", "10.12.0.0/16", "-m", "comment", "--comment", "AWS SNAT CHAIN EXCLUSION", "-j", "AWS-SNAT-CHAIN-3")
@@ -410,7 +414,6 @@ func TestSetupHostNetworkCleansUpStaleSNATRules(t *testing.T) {
 	_ = mockIptables.NewChain("nat", "AWS-SNAT-CHAIN-5")
 	_ = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
 
-	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
 	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, loopback, &testENINetIP)
 	assert.NoError(t, err)
 
@@ -463,7 +466,7 @@ func TestSetupHostNetworkExcludedSNATCIDRsIdempotent(t *testing.T) {
 	_ = mockIptables.Append("nat", "POSTROUTING", "-m", "comment", "--comment", "AWS SNAT CHAIN", "-j", "AWS-SNAT-CHAIN-0")
 
 	// remove exclusions
-	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
+	vpcCIDRs := []*string{aws.String("10.10.0.0/16"), aws.String("10.11.0.0/16")}
 	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, loopback, &testENINetIP)
 	assert.NoError(t, err)
 
@@ -507,7 +510,8 @@ func TestSetupHostNetworkMultipleCIDRs(t *testing.T) {
 
 	mockProcSys.EXPECT().Set("net/ipv4/conf/lo/rp_filter", "2").Return(nil)
 
-	vpcCIDRs := []string{"10.10.0.0/16", "10.11.0.0/16"}
+	var vpcCIDRs []*string
+	vpcCIDRs = []*string{aws.String("10.10.0.0/16"), aws.String("10.11.0.0/16")}
 	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, loopback, &testENINetIP)
 	assert.NoError(t, err)
 }
@@ -558,7 +562,7 @@ func TestSetupHostNetworkIgnoringRpFilterUpdate(t *testing.T) {
 	}
 	setupNetLinkMocks(ctrl, mockNetLink)
 
-	var vpcCIDRs []string
+	var vpcCIDRs []*string
 	err := ln.SetupHostNetwork(testENINetIPNet, vpcCIDRs, loopback, &testENINetIP)
 	assert.NoError(t, err)
 }
@@ -665,4 +669,25 @@ func (ipt *mockIptables) ListChains(table string) ([]string, error) {
 func (ipt *mockIptables) HasRandomFully() bool {
 	// TODO: Work out how to write a test case for this
 	return true
+}
+
+type mockFile struct {
+	closed bool
+	data   string
+}
+
+func (f *mockFile) WriteString(s string) (int, error) {
+	if f.closed {
+		panic("write call on closed file")
+	}
+	f.data += s
+	return len(s), nil
+}
+
+func (f *mockFile) Close() error {
+	if f.closed {
+		panic("close call on closed file")
+	}
+	f.closed = true
+	return nil
 }

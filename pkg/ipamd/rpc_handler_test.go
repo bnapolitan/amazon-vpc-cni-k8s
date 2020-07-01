@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	"github.com/aws/aws-sdk-go/aws"
 
 	pb "github.com/aws/amazon-vpc-cni-k8s/rpc"
 
@@ -47,11 +48,11 @@ func TestServer_AddNetwork(t *testing.T) {
 		IfName:      "eni",
 	}
 
-	vpcCIDRs := []string{vpcCIDR}
+	vpcCIDRs := []*string{aws.String(vpcCIDR)}
 	testCases := []struct {
 		name               string
 		useExternalSNAT    bool
-		vpcCIDRs           []string
+		vpcCIDRs           []*string
 		snatExclusionCIDRs []string
 	}{
 		{
@@ -79,7 +80,11 @@ func TestServer_AddNetwork(t *testing.T) {
 
 		assert.Equal(t, tc.useExternalSNAT, addNetworkReply.UseExternalSNAT, tc.name)
 
-		expectedCIDRs := append([]string{vpcCIDR}, tc.snatExclusionCIDRs...)
+		var expectedCIDRs []string
+		for _, cidr := range tc.vpcCIDRs {
+			expectedCIDRs = append(expectedCIDRs, *cidr)
+		}
+		expectedCIDRs = append([]string{vpcCIDR}, tc.snatExclusionCIDRs...)
 		assert.Equal(t, expectedCIDRs, addNetworkReply.VPCcidrs, tc.name)
 	}
 }

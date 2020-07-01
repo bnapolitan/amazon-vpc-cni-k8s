@@ -99,28 +99,28 @@ func (m *testMocks) mockWithFailureAt(t *testing.T, failAt string) *createVethPa
 
 	// veth pair
 	if failAt == "link-add" {
-		m.netlink.EXPECT().LinkAdd(gomock.Any()).Return(errors.New("error on LinkAdd"))
+		call = m.netlink.EXPECT().LinkAdd(gomock.Any()).Return(errors.New("error on LinkAdd"))
 		return mockContext
 	}
 	call = m.netlink.EXPECT().LinkAdd(gomock.Any()).Return(nil)
 
 	//hostVeth
 	if failAt == "link-by-name" {
-		m.netlink.EXPECT().LinkByName(gomock.Any()).Return(nil, errors.New("error on LinkByName host")).After(call)
+		call = m.netlink.EXPECT().LinkByName(gomock.Any()).Return(nil, errors.New("error on LinkByName host")).After(call)
 		return mockContext
 	}
 	call = m.netlink.EXPECT().LinkByName(gomock.Any()).Return(mockHostVeth, nil).After(call)
 
 	//host side setup
 	if failAt == "link-setup" {
-		m.netlink.EXPECT().LinkSetUp(mockHostVeth).Return(errors.New("error on LinkSetup")).After(call)
+		call = m.netlink.EXPECT().LinkSetUp(mockHostVeth).Return(errors.New("error on LinkSetup")).After(call)
 		return mockContext
 	}
 	call = m.netlink.EXPECT().LinkSetUp(mockHostVeth).Return(nil).After(call)
 
 	//container side
 	if failAt == "link-byname" {
-		m.netlink.EXPECT().LinkByName(gomock.Any()).Return(mockContVeth, errors.New("error on LinkByName container")).After(call)
+		call = m.netlink.EXPECT().LinkByName(gomock.Any()).Return(mockContVeth, errors.New("error on LinkByName container")).After(call)
 		return mockContext
 	}
 	call = m.netlink.EXPECT().LinkByName(gomock.Any()).Return(mockContVeth, nil).After(call)
@@ -131,20 +131,20 @@ func (m *testMocks) mockWithFailureAt(t *testing.T, failAt string) *createVethPa
 	call = mockContVeth.EXPECT().Attrs().Return(mockLinkAttrs).After(call)
 
 	if failAt == "route-replace" {
-		m.netlink.EXPECT().RouteReplace(gomock.Any()).Return(errors.New("error on RouteReplace")).After(call)
+		call = m.netlink.EXPECT().RouteReplace(gomock.Any()).Return(errors.New("error on RouteReplace")).After(call)
 		return mockContext
 	}
 	call = m.netlink.EXPECT().RouteReplace(gomock.Any()).Return(nil).After(call)
 
 	if failAt == "add-defaultroute" {
-		m.ip.EXPECT().AddDefaultRoute(gomock.Any(), mockContVeth).Return(errors.New("error on AddDefaultRoute")).After(call)
+		call = m.ip.EXPECT().AddDefaultRoute(gomock.Any(), mockContVeth).Return(errors.New("error on AddDefaultRoute")).After(call)
 		return mockContext
 	}
 	call = m.ip.EXPECT().AddDefaultRoute(gomock.Any(), mockContVeth).Return(nil).After(call)
 
 	// container addr
 	if failAt == "addr-add" {
-		m.netlink.EXPECT().AddrAdd(mockContVeth, gomock.Any()).Return(errors.New("error on AddrAdd")).After(call)
+		call = m.netlink.EXPECT().AddrAdd(mockContVeth, gomock.Any()).Return(errors.New("error on AddrAdd")).After(call)
 		return mockContext
 	}
 	call = m.netlink.EXPECT().AddrAdd(mockContVeth, gomock.Any()).Return(nil).After(call)
@@ -154,7 +154,7 @@ func (m *testMocks) mockWithFailureAt(t *testing.T, failAt string) *createVethPa
 	// hostVethMAC
 	call = mockHostVeth.EXPECT().Attrs().Return(mockLinkAttrs).After(call)
 	if failAt == "neigh-add" {
-		m.netlink.EXPECT().NeighAdd(gomock.Any()).Return(errors.New("error on NeighAdd")).After(call)
+		call = m.netlink.EXPECT().NeighAdd(gomock.Any()).Return(errors.New("error on NeighAdd")).After(call)
 		return mockContext
 	}
 	call = m.netlink.EXPECT().NeighAdd(gomock.Any()).Return(nil).After(call)
@@ -162,10 +162,10 @@ func (m *testMocks) mockWithFailureAt(t *testing.T, failAt string) *createVethPa
 	call = m.netns.EXPECT().Fd().Return(uintptr(testFD)).After(call)
 	// move it host namespace
 	if failAt == "link-setns" {
-		m.netlink.EXPECT().LinkSetNsFd(mockHostVeth, testFD).Return(errors.New("error on LinkSetNsFd")).After(call)
+		call = m.netlink.EXPECT().LinkSetNsFd(mockHostVeth, testFD).Return(errors.New("error on LinkSetNsFd")).After(call)
 		return mockContext
 	}
-	m.netlink.EXPECT().LinkSetNsFd(mockHostVeth, testFD).Return(nil).After(call)
+	call = m.netlink.EXPECT().LinkSetNsFd(mockHostVeth, testFD).Return(nil).After(call)
 
 	return mockContext
 }

@@ -17,7 +17,6 @@ import (
 	"encoding/binary"
 	"encoding/csv"
 	"fmt"
-	"io"
 	"math"
 	"net"
 	"os"
@@ -43,9 +42,6 @@ import (
 )
 
 const (
-	// 0 - 511 can be used other higher priorities
-	toPodRulePriority = 512
-
 	// 513 - 1023, can be used priority lower than toPodRulePriority but higher than default nonVPC CIDR rule
 
 	// 1024 is reserved for (ip rule not to <VPC's subnet> table main)
@@ -66,10 +62,10 @@ const (
 	// Defaults to empty.
 	envExcludeSNATCIDRs = "AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS"
 
-	// This environment is used to specify weather the SNAT rule added to iptables should randomize port
-	// allocation for outgoing connections. If set to "hashrandom" the SNAT iptables rule will have the "--random" flag
-	// added to it. Set it to "prng" if you want to use a pseudo random numbers, i.e. "--random-fully".
-	// Defaults to hashrandom.
+	// This environment is used to specify weather the SNAT rule added to iptables should randomize port allocation for
+	// outgoing connections. If set to "hashrandom" the SNAT iptables rule will have the "--random" flag added to it.
+	// Use "prng" if you want to use pseudo random numbers, i.e. "--random-fully".
+	// Default is "prng".
 	envRandomizeSNAT = "AWS_VPC_K8S_CNI_RANDOMIZESNAT"
 
 	// envNodePortSupport is the name of environment variable that configures whether we implement support for
@@ -117,7 +113,7 @@ var log = logger.Get()
 // NetworkAPIs defines the host level and the ENI level network related operations
 type NetworkAPIs interface {
 	// SetupNodeNetwork performs node level network configuration
-	SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, primaryMAC string, primaryAddr *net.IP) error
+	SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error
 	// SetupENINetwork performs eni level network configuration
 	SetupENINetwork(eniIP string, mac string, table int, subnetCIDR string) error
 	UseExternalSNAT() bool
@@ -134,7 +130,6 @@ type linuxNetwork struct {
 	typeOfSNAT              snatType
 	nodePortSupportEnabled  bool
 	shouldConfigureRpFilter bool
-	connmark                uint32
 	mtu                     int
 
 	netLink     netlinkwrapper.NetLink
@@ -186,11 +181,6 @@ func New() NetworkAPIs {
 	}
 }
 
-type stringWriteCloser interface {
-	io.Closer
-	WriteString(s string) (int, error)
-}
-
 // find out the primary interface name
 func findPrimaryInterfaceName(primaryMAC string) (string, error) {
 	log.Debugf("Trying to find primary interface that has mac : %s", primaryMAC)
@@ -215,7 +205,7 @@ func findPrimaryInterfaceName(primaryMAC string) (string, error) {
 }
 
 // SetupHostNetwork performs node level network configuration
-func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, primaryMAC string, primaryAddr *net.IP) error {
+func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP) error {
 	log.Info("Setting up host network... ")
 
 	hostRule := n.netLink.NewRule()
@@ -304,7 +294,7 @@ func (n *linuxNetwork) SetupHostNetwork(vpcCIDR *net.IPNet, vpcCIDRs []*string, 
 	}
 	var allCIDRs []snatCIDR
 	for _, cidr := range vpcCIDRs {
-		allCIDRs = append(allCIDRs, snatCIDR{cidr: *cidr, isExclusion: false})
+		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
 	}
 	for _, cidr := range n.excludeSNATCIDRs {
 		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: true})
@@ -578,12 +568,11 @@ func getExcludeSNATCIDRs() []string {
 }
 
 func typeOfSNAT() snatType {
-	defaultValue := randomHashSNAT
-	defaultString := "hashrandom"
+	defaultValue := randomPRNGSNAT
 	strValue := os.Getenv(envRandomizeSNAT)
 	switch strValue {
 	case "":
-		// empty means default
+		// empty means default, which is --random-fully
 		return defaultValue
 	case "prng":
 		// prng means to use --random-fully
@@ -592,14 +581,12 @@ func typeOfSNAT() snatType {
 	case "none":
 		// none means to disable randomisation (no flag)
 		return sequentialSNAT
-
-	case defaultString:
+	case "hashrandom":
 		// hashrandom means to use --random
 		return randomHashSNAT
 	default:
 		// if we get to this point, the environment variable has an invalid value
-		log.Errorf("Failed to parse %s; using default: %s. Provided string was %q", envRandomizeSNAT, defaultString,
-			strValue)
+		log.Errorf("Failed to parse %s; using default: %s. Provided string was %q", envRandomizeSNAT, "prng", strValue)
 		return defaultValue
 	}
 }

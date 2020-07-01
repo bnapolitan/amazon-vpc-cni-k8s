@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -141,8 +142,8 @@ type APIs interface {
 	// GetVPCIPv4CIDR returns VPC's 1st CIDR
 	GetVPCIPv4CIDR() string
 
-	// GetVPCIPv4CIDRs returns VPC's CIDRs
-	GetVPCIPv4CIDRs() []*string
+	// GetVPCIPv4CIDRs returns VPC's CIDRs from instance metadata
+	GetVPCIPv4CIDRs() []string
 
 	// GetLocalIPv4 returns the primary IP address on the primary ENI interface
 	GetLocalIPv4() string
@@ -163,14 +164,13 @@ type APIs interface {
 // EC2InstanceMetadataCache caches instance metadata
 type EC2InstanceMetadataCache struct {
 	// metadata info
-	securityGroups   []*string
+	securityGroups   StringSet
 	subnetID         string
-	cidrBlock        string
 	localIPv4        string
 	instanceID       string
 	instanceType     string
 	vpcIPv4CIDR      string
-	vpcIPv4CIDRs     []*string
+	vpcIPv4CIDRs     StringSet
 	primaryENI       string
 	primaryENImac    string
 	availabilityZone string
@@ -224,8 +224,39 @@ func prometheusRegister() {
 	}
 }
 
+//StringSet is a set of strings
+type StringSet struct {
+	sync.RWMutex
+	data sets.String
+}
+
+func (ss *StringSet) SortedList() []string {
+	ss.RLock()
+	defer ss.RUnlock()
+	// sets.String.List() returns a sorted list
+	return ss.data.List()
+}
+
+func (ss *StringSet) Set(items []string) {
+	ss.Lock()
+	defer ss.Unlock()
+	ss.data = sets.NewString(items...)
+}
+
+func (ss *StringSet) Difference(other *StringSet) *StringSet {
+	ss.RLock()
+	other.RLock()
+	defer ss.RUnlock()
+	defer other.RUnlock()
+	//example: s1 = {a1, a2, a3} s2 = {a1, a2, a4, a5} s1.Difference(s2) = {a3} s2.Difference(s1) = {a4, a5}
+	return &StringSet{data: ss.data.Difference(other.data)}
+}
+
 // New creates an EC2InstanceMetadataCache
 func New() (*EC2InstanceMetadataCache, error) {
+	//ctx is passed to initWithEC2Metadata func to cancel spawned go-routines when tests are run
+	ctx := context.Background()
+
 	// Initializes prometheus metrics
 	prometheusRegister()
 
@@ -240,9 +271,7 @@ func New() (*EC2InstanceMetadataCache, error) {
 	cache.region = region
 	log.Debugf("Discovered region: %s", cache.region)
 
-	sess, err := session.NewSession(
-		&aws.Config{Region: aws.String(cache.region),
-			MaxRetries: aws.Int(15)})
+	sess, err := session.NewSession(&aws.Config{Region: aws.String(cache.region), MaxRetries: aws.Int(15)})
 	if err != nil {
 		log.Errorf("Failed to initialize AWS SDK session %v", err)
 		return nil, errors.Wrap(err, "instance metadata: failed to initialize AWS SDK session")
@@ -250,7 +279,7 @@ func New() (*EC2InstanceMetadataCache, error) {
 
 	ec2SVC := ec2wrapper.New(sess)
 	cache.ec2SVC = ec2SVC
-	err = cache.initWithEC2Metadata()
+	err = cache.initWithEC2Metadata(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +291,7 @@ func New() (*EC2InstanceMetadataCache, error) {
 }
 
 // InitWithEC2metadata initializes the EC2InstanceMetadataCache with the data retrieved from EC2 metadata service
-func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
+func (cache *EC2InstanceMetadataCache) initWithEC2Metadata(ctx context.Context) error {
 	// retrieve availability-zone
 	az, err := cache.ec2Metadata.GetMetadata(metadataAZ)
 	if err != nil {
@@ -315,20 +344,6 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
 		return errors.Wrap(err, "get instance metadata: failed to find primary ENI")
 	}
 
-	// retrieve security groups
-	metadataSGIDs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataSGs)
-	if err != nil {
-		awsAPIErrInc("GetMetadata", err)
-		log.Errorf("Failed to retrieve security-group-ids data from instance metadata service, %v", err)
-		return errors.Wrap(err, "get instance metadata: failed to retrieve security-group-ids")
-	}
-	sgIDs := strings.Fields(metadataSGIDs)
-
-	for _, sgID := range sgIDs {
-		log.Debugf("Found security-group id: %s", sgID)
-		cache.securityGroups = append(cache.securityGroups, aws.String(sgID))
-	}
-
 	// retrieve sub-id
 	cache.subnetID, err = cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataSubnetID)
 	if err != nil {
@@ -347,20 +362,81 @@ func (cache *EC2InstanceMetadataCache) initWithEC2Metadata() error {
 	}
 	log.Debugf("Found vpc-ipv4-cidr-block: %s ", cache.vpcIPv4CIDR)
 
-	// retrieve vpc-ipv4-cidr-blocks
+	// retrieve security groups
+	err = cache.refreshSGIDs(mac)
+	if err != nil {
+		return err
+	}
+
+	// retrieve VPC IPv4 CIDR blocks
+	err = cache.refreshVPCIPv4CIDRs(mac)
+	if err != nil {
+		return err
+	}
+
+	// Refresh security groups and VPC CIDR blocks in the background
+	// Ignoring errors since we will retry in 30s
+	go wait.Forever(func() { _ = cache.refreshSGIDs(mac) }, 30*time.Second)
+	go wait.Forever(func() { _ = cache.refreshVPCIPv4CIDRs(mac) }, 30*time.Second)
+
+	// We use the ctx here for testing, since we spawn go-routines above which will run forever.
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+	return nil
+}
+
+// refreshSGIDs retrieves security groups
+func (cache *EC2InstanceMetadataCache) refreshSGIDs(mac string) error {
+	metadataSGIDs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataSGs)
+	if err != nil {
+		awsAPIErrInc("GetMetadata", err)
+		log.Errorf("Failed to retrieve security-group-ids data from instance metadata service")
+		return errors.Wrap(err, "get instance metadata: failed to retrieve security-group-ids")
+	}
+
+	sgIDs := strings.Fields(metadataSGIDs)
+
+	newSGs := StringSet{}
+	newSGs.Set(sgIDs)
+	addedSGs := newSGs.Difference(&cache.securityGroups)
+	deletedSGs := cache.securityGroups.Difference(&newSGs)
+
+	for _, sg := range addedSGs.SortedList() {
+		log.Infof("Found %s, added to ipamd cache", sg)
+	}
+	for _, sg := range deletedSGs.SortedList() {
+		log.Infof("Removed %s from ipamd cache", sg)
+	}
+	cache.securityGroups.Set(sgIDs)
+	return nil
+}
+
+// refreshVPCIPv4CIDRs retrieves VPC IPv4 CIDR blocks
+func (cache *EC2InstanceMetadataCache) refreshVPCIPv4CIDRs(mac string) error {
 	metadataVPCIPv4CIDRs, err := cache.ec2Metadata.GetMetadata(metadataMACPath + mac + metadataVPCcidrs)
 	if err != nil {
 		awsAPIErrInc("GetMetadata", err)
 		log.Errorf("Failed to retrieve vpc-ipv4-cidr-blocks from instance metadata service")
-		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-block data")
+		return errors.Wrap(err, "get instance metadata: failed to retrieve vpc-ipv4-cidr-blocks data")
 	}
 
 	vpcIPv4CIDRs := strings.Fields(metadataVPCIPv4CIDRs)
 
-	for _, vpcCIDR := range vpcIPv4CIDRs {
-		log.Debugf("Found VPC CIDR: %s", vpcCIDR)
-		cache.vpcIPv4CIDRs = append(cache.vpcIPv4CIDRs, aws.String(vpcCIDR))
+	newVpcIPv4CIDRs := StringSet{}
+	newVpcIPv4CIDRs.Set(vpcIPv4CIDRs)
+	addedVpcIPv4CIDRs := newVpcIPv4CIDRs.Difference(&cache.vpcIPv4CIDRs)
+	deletedVpcIPv4CIDRs := cache.vpcIPv4CIDRs.Difference(&newVpcIPv4CIDRs)
+
+	for _, vpcIPv4CIDR := range addedVpcIPv4CIDRs.SortedList() {
+		log.Infof("Found %s, added to ipamd cache", vpcIPv4CIDR)
 	}
+	for _, vpcIPv4CIDR := range deletedVpcIPv4CIDRs.SortedList() {
+		log.Infof("Removed %s from ipamd cache", vpcIPv4CIDR)
+	}
+	cache.vpcIPv4CIDRs.Set(vpcIPv4CIDRs)
 	return nil
 }
 
@@ -663,7 +739,7 @@ func (cache *EC2InstanceMetadataCache) createENI(useCustomCfg bool, sg []*string
 	eniDescription := eniDescriptionPrefix + cache.instanceID
 	input := &ec2.CreateNetworkInterfaceInput{
 		Description: aws.String(eniDescription),
-		Groups:      cache.securityGroups,
+		Groups:      aws.StringSlice(cache.securityGroups.SortedList()),
 		SubnetId:    aws.String(cache.subnetID),
 	}
 
@@ -1004,6 +1080,9 @@ func (cache *EC2InstanceMetadataCache) DescribeAllENIs() ([]ENIMetadata, map[str
 	// Collect ENI response into ENI metadata and tags.
 	tagMap := make(map[string]TagMap, len(ec2Response.NetworkInterfaces))
 	for _, ec2res := range ec2Response.NetworkInterfaces {
+		if ec2res.Attachment != nil && aws.Int64Value(ec2res.Attachment.DeviceIndex) == 0 && !aws.BoolValue(ec2res.Attachment.DeleteOnTermination) {
+			log.Warn("Primary ENI will not get deleted when node terminates because 'delete_on_termination' is set to false")
+		}
 		eniID := aws.StringValue(ec2res.NetworkInterfaceId)
 		eniMetadata := eniMap[eniID]
 		// Check IPv4 addresses
@@ -1030,7 +1109,6 @@ func badENIID(errMsg string) string {
 	if found == nil || len(found) < 2 {
 		return ""
 	}
-	fmt.Printf("found=%v\n", found)
 	return found[1]
 }
 
@@ -1267,8 +1345,8 @@ func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDR() string {
 }
 
 // GetVPCIPv4CIDRs returns VPC CIDRs
-func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDRs() []*string {
-	return cache.vpcIPv4CIDRs
+func (cache *EC2InstanceMetadataCache) GetVPCIPv4CIDRs() []string {
+	return cache.vpcIPv4CIDRs.SortedList()
 }
 
 // GetLocalIPv4 returns the primary IP address on the primary interface

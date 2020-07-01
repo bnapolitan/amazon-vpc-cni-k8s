@@ -149,43 +149,7 @@ if [[ "$PROVISION" == true && "$RUN_KOPS_TEST" == false ]]; then
     up-test-cluster
     __cluster_created=1
 else
-    aws s3api create-bucket --bucket kops-cni-test-temp --region $AWS_DEFAULT_REGION --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
-    curl -LO https://github.com/kubernetes/kops/releases/download/$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)/kops-linux-amd64
-    chmod +x kops-linux-amd64
-    sudo mv kops-linux-amd64 /usr/local/bin/kops
-    CLUSTER_NAME=kops-cni-test-cluster-${TEST_ID}.k8s.local
-    export KOPS_STATE_STORE=s3://kops-cni-test-temp
-
-    SSH_KEYS=~/.ssh/devopsinuse
-    if [ ! -f "$SSH_KEYS" ]
-    then
-        echo -e "\nCreating SSH keys ..."
-        ssh-keygen -t rsa -N '' -f ~/.ssh/devopsinuse
-    else
-        echo -e "\nSSH keys are already in place!"
-    fi
-
-    kops create cluster \
-    --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
-    --networking amazon-vpc-routed-eni \
-    --node-count 2 \
-    --ssh-public-key=~/.ssh/devopsinuse.pub \
-    --kubernetes-version ${K8S_VERSION} \
-    ${CLUSTER_NAME}
-    # kops create cluster \
-    # --zones ${AWS_DEFAULT_REGION}a,${AWS_DEFAULT_REGION}b \
-    # --networking amazon-vpc-routed-eni \
-    # --node-count 2 \
-    # --kubernetes-version ${K8S_VERSION} \
-    # ${CLUSTER_NAME}
-    kops update cluster --name ${CLUSTER_NAME} --yes
-    sleep 100
-    while [[ ! $(kops validate cluster | grep "is ready") ]]
-    do
-        sleep 5
-        echo "Waiting for cluster validation"
-    done
-    kubectl apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.6.3/config/v1.6/cni-metrics-helper.yaml
+    up-kops-cluster
     __cluster_created=1
 fi
 UP_CLUSTER_DURATION=$((SECONDS - START))
@@ -246,7 +210,7 @@ echo "**************************************************************************
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
-kubectl apply -f "$TEST_CONFIG_PATH"
+$KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
 echo "TODO: Poll and wait for updates to complete instead!"
@@ -258,8 +222,6 @@ echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 echo "*******************************************************************************"
 echo "Running integration tests on current image:"
 echo ""
-
-
 START=$SECONDS
 pushd ./test/integration
 GO111MODULE=on go test -v -timeout 0 ./... --kubeconfig=$KUBECONFIG --ginkgo.focus="\[cni-integration\]" --ginkgo.skip="\[Disruptive\]" \

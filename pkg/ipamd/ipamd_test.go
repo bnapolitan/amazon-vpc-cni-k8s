@@ -95,7 +95,7 @@ func TestNodeInit(t *testing.T) {
 
 	eni1, eni2 := getDummyENIMetadata()
 
-	var cidrs []*string
+	var cidrs []string
 	m.awsutils.EXPECT().GetENILimit().Return(4, nil)
 	m.awsutils.EXPECT().GetENIipLimit().Return(14, nil)
 	m.awsutils.EXPECT().GetIPv4sFromEC2(eni1.ENIID).AnyTimes().Return(eni1.IPv4Addresses, nil)
@@ -104,7 +104,7 @@ func TestNodeInit(t *testing.T) {
 
 	_, parsedVPCCIDR, _ := net.ParseCIDR(vpcCIDR)
 	primaryIP := net.ParseIP(ipaddr01)
-	m.awsutils.EXPECT().GetVPCIPv4CIDRs().Return(cidrs)
+	m.awsutils.EXPECT().GetVPCIPv4CIDRs().AnyTimes().Return(cidrs)
 	m.awsutils.EXPECT().GetPrimaryENImac().Return("")
 	m.network.EXPECT().SetupHostNetwork(parsedVPCCIDR, cidrs, "", &primaryIP).Return(nil)
 
@@ -286,15 +286,6 @@ func TestTryAddIPToENI(t *testing.T) {
 	}
 
 	mockContext.dataStore = testDatastore()
-
-	podENIConfig := &v1alpha1.ENIConfigSpec{
-		SecurityGroups: []string{"sg1-id", "sg2-id"},
-		Subnet:         "subnet1",
-	}
-	var sg []*string
-	for _, sgID := range podENIConfig.SecurityGroups {
-		sg = append(sg, aws.String(sgID))
-	}
 
 	m.awsutils.EXPECT().AllocENI(false, nil, "").Return(secENIid, nil)
 	m.awsutils.EXPECT().AllocIPAddresses(secENIid, warmIpTarget)

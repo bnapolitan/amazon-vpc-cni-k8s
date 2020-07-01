@@ -17,23 +17,24 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/awsutils"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/ipamd/datastore"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/networkutils"
 )
 
 // The package ipamd is a long running daemon which manages a warm pool of available IP addresses.
@@ -46,8 +47,6 @@ const (
 	eniAttachTime               = 10 * time.Second
 	nodeIPPoolReconcileInterval = 60 * time.Second
 	decreaseIPPoolInterval      = 30 * time.Second
-	maxK8SRetries               = 5
-	retryK8SInterval            = 3 * time.Second
 
 	// ipReconcileCooldown is the amount of time that an IP address must wait until it can be added to the data store
 	// during reconciliation after being discovered on the EC2 instance metadata.
@@ -202,7 +201,7 @@ type UnmanagedENISet struct {
 
 func (u *UnmanagedENISet) isUnmanaged(eniID string) bool {
 	val, ok := u.data[eniID]
-	return ok && val == true
+	return ok && val
 }
 
 func (u *UnmanagedENISet) reset() {
@@ -339,18 +338,13 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
-	var pbVPCcidrs []string
-	vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
-
-	for _, cidr := range vpcCIDRs {
-		pbVPCcidrs = append(pbVPCcidrs, *cidr)
-	}
 
 	_, vpcCIDR, err := net.ParseCIDR(c.awsClient.GetVPCIPv4CIDR())
 	if err != nil {
 		return errors.Wrap(err, "ipamd init: failed to retrieve VPC CIDR")
 	}
 
+	vpcCIDRs := c.awsClient.GetVPCIPv4CIDRs()
 	primaryIP := net.ParseIP(c.awsClient.GetLocalIPv4())
 	err = c.networkClient.SetupHostNetwork(vpcCIDR, vpcCIDRs, c.awsClient.GetPrimaryENImac(), &primaryIP)
 	if err != nil {
@@ -377,7 +371,7 @@ func (c *IPAMContext) nodeInit() error {
 			}
 
 			if retry > maxRetryCheckENI {
-				log.Warn("Unable to discover attached IPs for ENI from metadata service")
+				log.Warnf("Reached max retry: Unable to discover attached IPs for ENI from metadata service (attempted %d/%d): %v", retry, maxRetryCheckENI, err)
 				ipamdErrInc("waitENIAttachedMaxRetryExceeded")
 				break
 			}
@@ -397,6 +391,24 @@ func (c *IPAMContext) nodeInit() error {
 		return err
 	}
 
+	if err = c.configureIPRulesForPods(vpcCIDRs); err != nil {
+		return err
+	}
+
+	// For a new node, attach IPs
+	increasedPool, err := c.tryAssignIPs()
+	if err == nil && increasedPool {
+		c.updateLastNodeIPPoolAction()
+	} else {
+		return err
+	}
+
+	// Spawning updateCIDRsRulesOnChange go-routine
+	go wait.Forever(func() { vpcCIDRs = c.updateCIDRsRulesOnChange(vpcCIDRs) }, 30*time.Second)
+	return nil
+}
+
+func (c *IPAMContext) configureIPRulesForPods(pbVPCcidrs []string) error {
 	rules, err := c.networkClient.GetRuleList()
 	if err != nil {
 		log.Errorf("During ipamd init: failed to retrieve IP rule list %v", err)
@@ -411,15 +423,19 @@ func (c *IPAMContext) nodeInit() error {
 
 		err = c.networkClient.UpdateRuleListBySrc(rules, srcIPNet, pbVPCcidrs, !c.networkClient.UseExternalSNAT())
 		if err != nil {
-			log.Errorf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
+			log.Warnf("UpdateRuleListBySrc in nodeInit() failed for IP %s: %v", info.IP, err)
 		}
 	}
-	// For a new node, attach IPs
-	increasedPool, err := c.tryAssignIPs()
-	if err == nil && increasedPool {
-		c.updateLastNodeIPPoolAction()
+	return nil
+}
+
+func (c *IPAMContext) updateCIDRsRulesOnChange(oldVPCCidrs []string) []string {
+	newVPCCIDRs := c.awsClient.GetVPCIPv4CIDRs()
+
+	if len(oldVPCCidrs) != len(newVPCCIDRs) || !reflect.DeepEqual(oldVPCCidrs, newVPCCIDRs) {
+		_ = c.configureIPRulesForPods(newVPCCIDRs)
 	}
-	return err
+	return newVPCCIDRs
 }
 
 func (c *IPAMContext) updateIPStats(unmanaged int) {

@@ -14,6 +14,7 @@
 package awsutils
 
 import (
+	"context"
 	"errors"
 	"os"
 	"sort"
@@ -67,8 +68,12 @@ func setup(t *testing.T) (*gomock.Controller,
 }
 
 func TestInitWithEC2metadata(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
+
+	metadataVPCIPv4CIDRs := "192.168.0.0/16	100.66.0.0/1"
 
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, nil)
@@ -79,24 +84,27 @@ func TestInitWithEC2metadata(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil).AnyTimes()
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidr).Return(vpcCIDR, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(vpcCIDR, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(metadataVPCIPv4CIDRs, nil).AnyTimes()
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
-	err := ins.initWithEC2Metadata()
+	err := ins.initWithEC2Metadata(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, az, ins.availabilityZone)
 	assert.Equal(t, localIP, ins.localIPv4)
 	assert.Equal(t, ins.instanceID, instanceID)
 	assert.Equal(t, ins.primaryENImac, primaryMAC)
-	assert.Equal(t, len(ins.securityGroups), 2)
+	assert.Equal(t, len(ins.securityGroups.SortedList()), 2)
 	assert.Equal(t, subnetID, ins.subnetID)
 	assert.Equal(t, vpcCIDR, ins.vpcIPv4CIDR)
+	assert.Equal(t, len(ins.vpcIPv4CIDRs.SortedList()), 2)
 }
 
 func TestInitWithEC2metadataVPCcidrErr(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
@@ -109,16 +117,17 @@ func TestInitWithEC2metadataVPCcidrErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidr).Return(vpcCIDR, errors.New("Error on VPCcidr"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
-	err := ins.initWithEC2Metadata()
+	err := ins.initWithEC2Metadata(ctx)
 	assert.Error(t, err)
 }
 
 func TestInitWithEC2metadataSubnetErr(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
@@ -131,15 +140,16 @@ func TestInitWithEC2metadataSubnetErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, errors.New("Error on Subnet"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
-	err := ins.initWithEC2Metadata()
+	err := ins.initWithEC2Metadata(ctx)
 	assert.Error(t, err)
 }
 
 func TestInitWithEC2metadataSGErr(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
@@ -152,14 +162,18 @@ func TestInitWithEC2metadataSGErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidr).Return(vpcCIDR, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, errors.New("Error on SG"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
-	err := ins.initWithEC2Metadata()
+	err := ins.initWithEC2Metadata(ctx)
 	assert.Error(t, err)
 }
 
 func TestInitWithEC2metadataENIErrs(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
@@ -171,11 +185,13 @@ func TestInitWithEC2metadataENIErrs(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath).Return("", errors.New("err on ENIs"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
-	err := ins.initWithEC2Metadata()
+	err := ins.initWithEC2Metadata(ctx)
 	assert.Error(t, err)
 }
 
 func TestInitWithEC2metadataMACErr(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
@@ -186,11 +202,13 @@ func TestInitWithEC2metadataMACErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMAC).Return(primaryMAC, errors.New("error on MAC"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
-	err := ins.initWithEC2Metadata()
+	err := ins.initWithEC2Metadata(ctx)
 	assert.Error(t, err)
 }
 
 func TestInitWithEC2metadataLocalIPErr(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
@@ -198,11 +216,13 @@ func TestInitWithEC2metadataLocalIPErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataLocalIP).Return(localIP, errors.New("error on localIP"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
-	err := ins.initWithEC2Metadata()
+	err := ins.initWithEC2Metadata(ctx)
 	assert.Error(t, err)
 }
 
 func TestInitWithEC2metadataInstanceErr(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
@@ -211,18 +231,20 @@ func TestInitWithEC2metadataInstanceErr(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataInstanceID).Return(instanceID, errors.New("error on instanceID"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
-	err := ins.initWithEC2Metadata()
+	err := ins.initWithEC2Metadata(ctx)
 	assert.Error(t, err)
 }
 
 func TestInitWithEC2metadataAZErr(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
 	ctrl, mockMetadata, _ := setup(t)
 	defer ctrl.Finish()
 
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, errors.New("error on metadata AZ"))
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata}
-	err := ins.initWithEC2Metadata()
+	err := ins.initWithEC2Metadata(ctx)
 	assert.Error(t, err)
 }
 
@@ -390,7 +412,7 @@ func TestDescribeAllENIs(t *testing.T) {
 		awsErr  error
 		expErr  error
 	}{
-		{"Success DescribeENI", map[string]TagMap{"": {"foo": "foo-value"}}, 1,  nil, nil},
+		{"Success DescribeENI", map[string]TagMap{"": {"foo": "foo-value"}}, 1, nil, nil},
 		{"Not found error", nil, maxENIEC2APIRetries, awserr.New("InvalidNetworkInterfaceID.NotFound", "no 'eni-xxx'", nil), expectedError},
 		{"Not found, no message", nil, maxENIEC2APIRetries, awserr.New("InvalidNetworkInterfaceID.NotFound", "no message", nil), noMessageError},
 		{"Other error", nil, maxENIEC2APIRetries, err, err},
@@ -412,6 +434,8 @@ func TestDescribeAllENIs(t *testing.T) {
 }
 
 func TestTagEni(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
 	ctrl, mockMetadata, mockEC2 := setup(t)
 	defer ctrl.Finish()
 	mockMetadata.EXPECT().GetMetadata(metadataAZ).Return(az, nil)
@@ -423,13 +447,13 @@ func TestTagEni(t *testing.T) {
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataDeviceNum).Return(eni1Device, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataOwnerID).Return("1234", nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataInterface).Return(primaryMAC, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSGs).Return(sgs, nil).AnyTimes()
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataSubnetID).Return(subnetID, nil)
 	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidr).Return(vpcCIDR, nil)
-	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(vpcCIDR, nil)
+	mockMetadata.EXPECT().GetMetadata(metadataMACPath+primaryMAC+metadataVPCcidrs).Return(vpcCIDR, nil).AnyTimes()
 
 	ins := &EC2InstanceMetadataCache{ec2Metadata: mockMetadata, ec2SVC: mockEC2}
-	err := ins.initWithEC2Metadata()
+	err := ins.initWithEC2Metadata(ctx)
 	assert.NoError(t, err)
 	mockEC2.EXPECT().CreateTagsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("tagging failed"))
 	mockEC2.EXPECT().CreateTagsWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("tagging failed"))
@@ -777,4 +801,22 @@ func TestEC2InstanceMetadataCache_getFilteredListOfNetworkInterfaces_Error(t *te
 	got, err := ins.getFilteredListOfNetworkInterfaces()
 	assert.Nil(t, got)
 	assert.Error(t, err)
+}
+
+func Test_badENIID(t *testing.T) {
+	tests := []struct {
+		name   string
+		errMsg string
+		want   string
+	}{
+		{"Just a regular string", "Just a string", ""},
+		{"Actual error message", "The networkInterface ID 'eni-00000088' does not exist", "eni-00000088"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := badENIID(tt.errMsg); got != tt.want {
+				t.Errorf("badENIID() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

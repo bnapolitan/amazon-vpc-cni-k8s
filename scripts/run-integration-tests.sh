@@ -172,7 +172,7 @@ else
 
     export KUBECONFIG=~/.kube/config
     kubectl apply -f "$TEST_CONFIG_PATH"
-    sleep 30
+    sleep 5
     while [[ $($KUBECTL_PATH describe ds aws-node -n=kube-system | grep "Available Pods: 0") ]]
     do
         sleep 5
@@ -217,7 +217,7 @@ echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
-sleep 30
+sleep 5
 while [[ $($KUBECTL_PATH describe ds aws-node -n=kube-system | grep "Available Pods: 0") ]]
 do
     sleep 5

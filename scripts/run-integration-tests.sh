@@ -172,7 +172,13 @@ else
 
     export KUBECONFIG=~/.kube/config
     kubectl apply -f "$TEST_CONFIG_PATH"
-    sleep 110
+    sleep 30
+    while [[ $($KUBECTL_PATH describe ds aws-node -n=kube-system | grep "Available Pods: 0") ]]
+    do
+        sleep 5
+        echo "Waiting for daemonset update"
+    done
+    echo "Updated!"
 
     go install github.com/onsi/ginkgo/ginkgo
     wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
@@ -211,11 +217,14 @@ echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
 $KUBECTL_PATH apply -f "$TEST_CONFIG_PATH"
+sleep 30
+while [[ $($KUBECTL_PATH describe ds aws-node -n=kube-system | grep "Available Pods: 0") ]]
+do
+    sleep 5
+    echo "Waiting for daemonset update"
+done
+echo "Updated!"
 
-# Delay based on 3 nodes, 30s grace period per CNI pod
-echo "TODO: Poll and wait for updates to complete instead!"
-echo "Sleeping for 110s"
-sleep 110
 CNI_IMAGE_UPDATE_DURATION=$((SECONDS - START))
 echo "TIMELINE: Updating CNI image took $CNI_IMAGE_UPDATE_DURATION seconds."
 

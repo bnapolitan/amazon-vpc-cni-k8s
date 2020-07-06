@@ -173,7 +173,7 @@ else
     export KUBECONFIG=~/.kube/config
     kubectl apply -f "$TEST_CONFIG_PATH"
     sleep 5
-    while [[ $($KUBECTL_PATH describe ds aws-node -n=kube-system | grep "Available Pods: 0") ]]
+    while [[ $(kubectl describe ds aws-node -n=kube-system | grep "Available Pods: 0") ]]
     do
         sleep 5
         echo "Waiting for daemonset update"

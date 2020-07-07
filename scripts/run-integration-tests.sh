@@ -8,6 +8,7 @@ DIR=$(cd "$(dirname "$0")"; pwd)
 source "$DIR"/lib/common.sh
 source "$DIR"/lib/aws.sh
 source "$DIR"/lib/cluster.sh
+source "$DIR"/lib/integration.sh
 
 # Variables used in /lib/aws.sh
 OS=$(go env GOOS)
@@ -27,16 +28,20 @@ __cluster_deprovisioned=0
 on_error() {
     # Make sure we destroy any cluster that was created if we hit run into an
     # error when attempting to run tests against the cluster
-    if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true && $RUN_KOPS_TEST == false ]]; then
-        # prevent double-deprovisioning with ctrl-c during deprovisioning...
-        __cluster_deprovisioned=1
-        echo "Cluster was provisioned already. Deprovisioning it..."
-        down-test-cluster
+    if [[ $__cluster_created -eq 1 && $__cluster_deprovisioned -eq 0 && "$DEPROVISION" == true ]]; then
+        if [[ $RUN_KOPS_TEST == true ]]; then
+            __cluster_deprovisioned=1
+            echo "Cluster was provisioned already. Deprovisioning it..."
+            down-kops-cluster
+        fi
+        else
+            # prevent double-deprovisioning with ctrl-c during deprovisioning...
+            __cluster_deprovisioned=1
+            echo "Cluster was provisioned already. Deprovisioning it..."
+            down-test-cluster
+        fi
     fi
-    if [[ $RUN_KOPS_TEST == true ]]; then
-        echo "Cluster was provisioned already. Deprovisioning it..."
-        down-kops-cluster
-    fi
+    
     exit 1
 }
 
@@ -147,11 +152,11 @@ mkdir -p "$TEST_CONFIG_DIR"
 START=$SECONDS
 if [[ "$PROVISION" == true && "$RUN_KOPS_TEST" == false ]]; then
     up-test-cluster
-    __cluster_created=1
 else
     up-kops-cluster
-    __cluster_created=1
 fi
+__cluster_created=1
+
 UP_CLUSTER_DURATION=$((SECONDS - START))
 echo "TIMELINE: Upping test cluster took $UP_CLUSTER_DURATION seconds."
 
@@ -168,36 +173,7 @@ if [[ $RUN_KOPS_TEST != true ]]; then
     export KUBECONFIG=$KUBECONFIG_PATH
     ADDONS_CNI_IMAGE=$($KUBECTL_PATH describe daemonset aws-node -n kube-system | grep Image | cut -d ":" -f 2-3 | tr -d '[:space:]')
 else
-    START=$SECONDS
-
-    export KUBECONFIG=~/.kube/config
-    kubectl apply -f "$TEST_CONFIG_PATH"
-    sleep 5
-    while [[ $(kubectl describe ds aws-node -n=kube-system | grep "Available Pods: 0") ]]
-    do
-        sleep 5
-        echo "Waiting for daemonset update"
-    done
-    echo "Updated!"
-
-    go install github.com/onsi/ginkgo/ginkgo
-    wget -qO- https://dl.k8s.io/v$K8S_VERSION/kubernetes-test.tar.gz | tar -zxvf - --strip-components=4 -C /tmp  kubernetes/platforms/linux/amd64/e2e.test
-
-    ginkgo -p --focus="Conformance"  --failFast --flakeAttempts 2 \
-    --skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]|\[Serial\]" /tmp/e2e.test -- --kubeconfig=$KUBECONFIG
-
-    /tmp/e2e.test --ginkgo.focus="\[Serial\].*Conformance" --kubeconfig=$KUBECONFIG --ginkgo.failFast --ginkgo.flakeAttempts 2 \
-    --ginkgo.skip="(should support remote command execution over websockets)|(should support retrieving logs from the container over websockets)|\[Slow\]"
-    echo "Kops conformance tests ran successfully!"
-
-    KOPS_TEST_DURATION=$((SECONDS - START))
-    echo "TIMELINE: KOPS tests took $KOPS_TEST_DURATION seconds."
-
-    START=$SECONDS
-    down-kops-cluster
-    DOWN_KOPS_DURATION=$((SECONDS - START))
-    echo "TIMELINE: Down KOPS cluster took $DOWN_KOPS_DURATION seconds."
-    exit 0
+    run_kops_conformance
 fi
 
 echo "*******************************************************************************"
@@ -259,10 +235,10 @@ fi
 if [[ "$DEPROVISION" == true ]]; then
     START=$SECONDS
 
-    if [[ "$RUN_KOPS_TEST" == false ]]; then
-        down-test-cluster
-    else
+    if [[ "$RUN_KOPS_TEST" == true ]]; then
         down-kops-cluster
+    else
+        down-test-cluster
     fi
 
     DOWN_DURATION=$((SECONDS - START))

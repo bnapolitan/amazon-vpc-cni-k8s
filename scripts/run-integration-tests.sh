@@ -33,7 +33,6 @@ on_error() {
             __cluster_deprovisioned=1
             echo "Cluster was provisioned already. Deprovisioning it..."
             down-kops-cluster
-        fi
         else
             # prevent double-deprovisioning with ctrl-c during deprovisioning...
             __cluster_deprovisioned=1

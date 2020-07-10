@@ -197,6 +197,16 @@ popd
 CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
 
+if [[ "$RUN_APPMESH_TEST" == true ]]; then
+    wget -q0- https://raw.githubusercontent.com/aws/aws-app-mesh-controller-for-k8s/legacy-controller/scripts/ci_e2e_test.sh
+    mkdir lib
+    pushd lib
+    wget -q0- https://raw.githubusercontent.com/aws/aws-app-mesh-controller-for-k8s/legacy-controller/scripts/lib/cluster.sh
+    wget -q0- https://raw.githubusercontent.com/aws/aws-app-mesh-controller-for-k8s/legacy-controller/scripts/lib/ecr.sh
+    popd
+    bash ci_e2e_test.sh
+fi
+
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."
   START=$SECONDS

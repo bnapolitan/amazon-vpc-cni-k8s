@@ -19,6 +19,7 @@ ARCH=$(go env GOARCH)
 : "${DEPROVISION:=true}"
 : "${BUILD:=true}"
 : "${RUN_CONFORMANCE:=false}"
+: "${RUN_APPMESH_TEST:=false}"
 
 __cluster_created=0
 __cluster_deprovisioned=0

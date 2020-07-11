@@ -102,7 +102,7 @@ ensure_ecr_repo "$AWS_ACCOUNT_ID" "$AWS_INIT_ECR_REPO_NAME"
 if [[ $(docker images -q "$IMAGE_NAME:$TEST_IMAGE_VERSION" 2> /dev/null) ]]; then
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION already exists in repository. Skipping image build..."
     DOCKER_BUILD_DURATION=0
-else
+elif [[ "$RUN_APPMESH_TEST" == false ]]; then
     echo "CNI image $IMAGE_NAME:$TEST_IMAGE_VERSION does not exist in repository."
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         __cni_source_tmpdir="/tmp/cni-src-$IMAGE_VERSION"
@@ -123,6 +123,16 @@ else
     if [[ $TEST_IMAGE_VERSION != "$LOCAL_GIT_VERSION" ]]; then
         popd
     fi
+fi
+
+if [[ "$RUN_APPMESH_TEST" == true ]]; then
+    wget -q https://raw.githubusercontent.com/aws/aws-app-mesh-controller-for-k8s/legacy-controller/scripts/ci_e2e_test.sh
+    mkdir lib
+    pushd lib
+    wget -q https://raw.githubusercontent.com/aws/aws-app-mesh-controller-for-k8s/legacy-controller/scripts/lib/cluster.sh
+    wget -q https://raw.githubusercontent.com/aws/aws-app-mesh-controller-for-k8s/legacy-controller/scripts/lib/ecr.sh
+    popd
+    bash ci_e2e_test.sh
 fi
 
 echo "*******************************************************************************"
@@ -197,16 +207,6 @@ TEST_PASS=$?
 popd
 CURRENT_IMAGE_INTEGRATION_DURATION=$((SECONDS - START))
 echo "TIMELINE: Current image integration tests took $CURRENT_IMAGE_INTEGRATION_DURATION seconds."
-
-if [[ "$RUN_APPMESH_TEST" == true ]]; then
-    wget -q https://raw.githubusercontent.com/aws/aws-app-mesh-controller-for-k8s/legacy-controller/scripts/ci_e2e_test.sh
-    mkdir lib
-    pushd lib
-    wget -q https://raw.githubusercontent.com/aws/aws-app-mesh-controller-for-k8s/legacy-controller/scripts/lib/cluster.sh
-    wget -q https://raw.githubusercontent.com/aws/aws-app-mesh-controller-for-k8s/legacy-controller/scripts/lib/ecr.sh
-    popd
-    bash ci_e2e_test.sh
-fi
 
 if [[ $TEST_PASS -eq 0 && "$RUN_CONFORMANCE" == true ]]; then
   echo "Running conformance tests against cluster."

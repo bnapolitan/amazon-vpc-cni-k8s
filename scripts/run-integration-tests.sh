@@ -181,7 +181,7 @@ echo "**************************************************************************
 echo "Updating CNI to image $IMAGE_NAME:$TEST_IMAGE_VERSION"
 echo "Using init container $INIT_IMAGE_NAME:$TEST_IMAGE_VERSION"
 START=$SECONDS
-$KUBECTL_PATH apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.5/config/v1.5/aws-k8s-cni.yaml
+$KUBECTL_PATH apply -f https://raw.githubusercontent.com/aws/amazon-vpc-cni-k8s/release-1.5.1/config/v1.5/aws-k8s-cni.yaml
 
 # Delay based on 3 nodes, 30s grace period per CNI pod
 echo "TODO: Poll and wait for updates to complete instead!"

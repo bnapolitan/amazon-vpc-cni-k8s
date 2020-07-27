@@ -218,15 +218,13 @@ func add(args *skel.CmdArgs, cniTypes typeswrapper.CNITYPES, grpcClient grpcwrap
 	interfaceIndex := 0
 	ips := []*current.IPConfig{
 		{
-			Version:   "4",
-			Address:   *addr,
-			Interface: &interfaceIndex,
+			Version: "4",
+			Address: *addr,
 		},
 	}
 
 	result := &current.Result{
-		IPs:        ips,
-		Interfaces: []*current.Interface{{Name: hostVethName}},
+		IPs: ips,
 	}
 
 	return cniTypes.PrintResult(result, conf.CNIVersion)

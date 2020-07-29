@@ -1,6 +1,6 @@
 ## How to run tests
 # All tests
-    * set AWS_ACCESS_KEY_ID
+    * set AWS_ACCESS_KEY_ID 
     * set AWS_SECRET_ACCESS_KEY
     * set AWS_DEFAULT_REGION (optional, defaults to us-west-2 if not set)
     * approve test after build completes
